@@ -52,6 +52,18 @@ jobs:
 
       - run: npm ci
 
+      # A suíte de integração roda um banco POR WORKER (myaihub_test_1..4,
+      # ver apps/api/tests/helpers/worker-db.ts) e cada um é criado por
+      # `prisma migrate deploy` na hora — o usuário `myaihub` do container
+      # só nasce com privilégio na base declarada em `MYSQL_DATABASE`
+      # (myaihub_test), então criar/migrar as outras falha com P1010. É
+      # container efêmero só desta pipeline: liberar tudo para o usuário
+      # não expõe nada.
+      - name: Liberar privilégios do usuário de teste
+        run: >-
+          mysql -h 127.0.0.1 -uroot -proot
+          -e "GRANT ALL PRIVILEGES ON *.* TO 'myaihub'@'%'; FLUSH PRIVILEGES;"
+
       # Os scripts de banco carregam o .env da raiz. As variáveis reais já estão
       # no ambiente do job e têm precedência — este arquivo só satisfaz o loader.
       - name: Preparar .env

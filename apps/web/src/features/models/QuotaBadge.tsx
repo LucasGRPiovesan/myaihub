@@ -41,7 +41,11 @@ export function QuotaBadge({ isAdmin }: { isAdmin: boolean }) {
   const { data: providers } = useProviders({ enabled: isAdmin });
   const setForcedPaid = useSetGeminiForcedPaid();
 
-  if (!import.meta.env.DEV) return null;
+  // Ruído para quem só usa o produto — mas o admin é quem decide de qual
+  // bolso a chamada sai, e esta conta ainda não tem usuário que não seja o
+  // dono testando (2026-09-20). Fora do DEV, some para todo mundo que não é
+  // admin; nunca aparece pra quem não pode agir sobre ele.
+  if (!import.meta.env.DEV && !isAdmin) return null;
 
   const gemini = providers?.find((linha) => linha.provider === 'gemini');
   const forcedPaid = gemini?.forcedPaid ?? false;

@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { del, put, get as blobGet } from '@vercel/blob';
 import type { TenantContext } from '../../../shared/application/tenant-context.js';
 import type { Db } from '../../../shared/infrastructure/prisma/client.js';
 import type {
@@ -15,6 +16,53 @@ const EXTENSIONS: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
 };
+
+/**
+ * Bytes no Vercel Blob (store PRIVADO — `myaihub-media`).
+ *
+ * Disco local não sobrevive a uma função serverless: `/tmp` é efêmero e
+ * some no cold start seguinte. `storageKey` guarda o PATHNAME (não a url
+ * completa), porque é o que `get()`/`del()` da SDK esperam de volta.
+ *
+ * Privado, não público: a rota `/api/media/:id` já escopa por tenant antes
+ * de chamar `storage.get` (invariante 1) — um blob público duplicaria essa
+ * checagem numa URL que, uma vez vista, funcionaria para qualquer um.
+ */
+export class VercelBlobMediaStorage implements MediaStorage {
+  async put(accountId: string, assetId: string, mimeType: string, bytes: Buffer): Promise<string> {
+    const extension = EXTENSIONS[mimeType] ?? 'bin';
+    const pathname = join(accountId, `${assetId}.${extension}`).replaceAll('\\', '/');
+
+    const blob = await put(pathname, bytes, {
+      access: 'private',
+      contentType: mimeType,
+      // O nome já é opaco (accountId/ulid) — sufixo aleatório só duplicaria
+      // a garantia de unicidade que o próprio ULID do asset já dá.
+      addRandomSuffix: false,
+    });
+
+    return blob.pathname;
+  }
+
+  async get(storageKey: string): Promise<Buffer | null> {
+    try {
+      const result = await blobGet(storageKey, { access: 'private' });
+      if (!result || result.statusCode !== 200) return null;
+
+      const chunks: Buffer[] = [];
+      for await (const chunk of result.stream) {
+        chunks.push(chunk as Buffer);
+      }
+      return Buffer.concat(chunks);
+    } catch {
+      return null;
+    }
+  }
+
+  async delete(storageKey: string): Promise<void> {
+    await del(storageKey);
+  }
+}
 
 /**
  * Bytes no disco local.

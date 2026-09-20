@@ -15,6 +15,7 @@ import { HttpWebContentReader } from './shared/infrastructure/http/web-content-r
 import {
   LocalFileMediaStorage,
   PrismaMediaRepository,
+  VercelBlobMediaStorage,
 } from './modules/media/infrastructure/media.infrastructure.js';
 import type { MediaRouterDependencies } from './modules/media/presentation/media.routes.js';
 import { createLogger } from './shared/infrastructure/logging/pino-logger.js';
@@ -316,7 +317,13 @@ export function createContainer(): Container {
   const agents = new PrismaAgentRepository(db, audit);
   const campaigns = new PrismaCampaignRepository(db, audit);
   const media = new PrismaMediaRepository(db);
-  const mediaStorage = new LocalFileMediaStorage(env.MEDIA_DIR);
+  // `local` não sobrevive a uma função serverless (`/tmp` é efêmero) — é por
+  // isso que existe a segunda opção, não porque um dia vá substituir a
+  // primeira: continua sendo o certo para rodar fora da Vercel.
+  const mediaStorage =
+    env.STORAGE_DRIVER === 'vercel-blob'
+      ? new VercelBlobMediaStorage()
+      : new LocalFileMediaStorage(env.MEDIA_DIR);
 
   // UM registro de alvos, dois consumidores: o runner (LLM propõe) e a edição
   // manual (o usuário propõe). Duplicar isso deixaria os dois caminhos

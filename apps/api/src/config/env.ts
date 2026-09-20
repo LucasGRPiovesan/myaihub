@@ -108,7 +108,7 @@ const envSchema = z.object({
   MODEL_ROLE_VALIDATION_FAST: modelRoute.default('gemini:gemini-3.5-flash-lite'),
   MODEL_ROLE_ANALYSIS_VISION: modelRoute.default('gemini:gemini-3.5-flash-lite'),
 
-  STORAGE_DRIVER: z.enum(['local']).default('local'),
+  STORAGE_DRIVER: z.enum(['local', 'vercel-blob']).default('local'),
   STORAGE_LOCAL_PATH: z.string().default('./storage'),
 });
 
