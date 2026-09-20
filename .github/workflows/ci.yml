@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  verify:
+    name: lint · typecheck · test · build
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: myaihub_test
+          MYSQL_USER: myaihub
+          MYSQL_PASSWORD: myaihub
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: mysql://myaihub:myaihub@127.0.0.1:3306/myaihub_test
+      TEST_DATABASE_URL: mysql://myaihub:myaihub@127.0.0.1:3306/myaihub_test
+      SHADOW_DATABASE_URL: mysql://myaihub:myaihub@127.0.0.1:3306/myaihub_shadow
+      # Segredos de CI: descartáveis, e nunca os mesmos de qualquer ambiente real.
+      JWT_ACCESS_SECRET: ci-access-secret-com-mais-de-32-caracteres-ok
+      JWT_REFRESH_SECRET: ci-refresh-secret-com-mais-de-32-caracteres-ok
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # Os scripts de banco carregam o .env da raiz. As variáveis reais já estão
+      # no ambiente do job e têm precedência — este arquivo só satisfaz o loader.
+      - name: Preparar .env
+        run: cp .env.example .env
+
+      - name: Gerar Prisma Client
+        run: npm run db:generate -w @myaihub/api
+
+      - name: Aplicar migrações
+        run: npm run db:migrate:deploy -w @myaihub/api
+
+      # O E2E tem banco PRÓPRIO: ele semeia um admin e conversa com a
+      # aplicação no ar, enquanto a suíte de integração trunca tudo a cada
+      # caso. Compartilhar faria um apagar o estado do outro no meio.
+      - name: Provisionar banco do E2E
+        run: >-
+          mysql -h 127.0.0.1 -uroot -proot
+          -e "CREATE DATABASE IF NOT EXISTS myaihub_e2e
+          CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+          GRANT ALL PRIVILEGES ON myaihub_e2e.* TO 'myaihub'@'%'; FLUSH PRIVILEGES;"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # O E2E roda DEPOIS do build: ele serve o `dist` pelo `vite preview`,
+      # que é o mais perto do que vai para produção. Contra o provider FAKE —
+      # um E2E que depende do Gemini falha por indisponibilidade alheia e vira
+      # ruído que ninguém investiga.
+      - name: Instalar navegador do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Preparar banco do E2E
+        run: npm run e2e:setup
+
+      - name: E2E
+        run: npm run e2e
+
+      - name: Guardar o rastro do que falhou
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

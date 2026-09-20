@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>MyAIHub</title>
+    <script>
+      // Aplica o tema antes da primeira pintura para não haver flash de tema errado.
+      (function () {
+        try {
+          var stored = localStorage.getItem('myaihub:theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme =
+            stored === 'light' || stored === 'dark' ? stored : prefersDark ? 'dark' : 'light';
+          document.documentElement.dataset.theme = theme;
+        } catch (_) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
+  </head>
+  <body class="h-full">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

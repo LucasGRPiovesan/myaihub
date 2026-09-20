@@ -1,0 +1,140 @@
+# MyAIHub — ambiente local
+#
+#   docker compose up -d
+#     Sobe TUDO: MySQL, Adminer, api e web em containers de dev com hot
+#     reload. `web` só sobe depois de `api` responder saudável, e `api` só
+#     depois de `mysql` saudável — sem flag de perfil para lembrar.
+#
+#   Se preferir rodar api/web no HOST (melhor HMR nativo no Windows), suba só
+#   a infra: `docker compose up -d mysql adminer` e use `npm run dev`.
+
+name: myaihub
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: myaihub-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-myaihub}
+      MYSQL_USER: ${MYSQL_USER:-myaihub}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-myaihub}
+    ports:
+      - '${MYSQL_PORT:-3306}:3306'
+    volumes:
+      # Dado de runtime de alto I/O, no SSD — não é volume nomeado do Docker
+      # (que continua no storage padrão, no HD) e é descartável de propósito:
+      # apagar a pasta apaga o banco de dev inteiro.
+      - ${MYSQL_DATA_DIR:-C:/DockerRuntime/myaihub/mysql}:/var/lib/mysql
+      # Roda apenas na primeira inicialização do volume.
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # `--protocol=TCP` não é detalhe: durante a inicialização o MySQL sobe um
+      # servidor temporário que só escuta no socket Unix. Sem forçar TCP, o
+      # ping passa por ali e declara saudável um servidor que ainda não criou
+      # o usuário `myaihub` nem aceita conexão de rede — api sobe e quebra com
+      # "Host is not allowed to connect".
+      test:
+        [
+          'CMD',
+          'mysqladmin',
+          'ping',
+          '--protocol=TCP',
+          '-h',
+          '127.0.0.1',
+          '-u',
+          'root',
+          '-p${MYSQL_ROOT_PASSWORD:-root}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  adminer:
+    image: adminer:5
+    container_name: myaihub-adminer
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    ports:
+      - '${ADMINER_PORT:-8080}:8080'
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: dev
+    container_name: myaihub-api
+    restart: unless-stopped
+    # npm (PID 1 do CMD) não repassa SIGTERM ao processo filho (tsx) — sem
+    # init, `docker compose down` trava esperando o container morrer sozinho
+    # e força a matar na mão. tini como PID 1 repassa o sinal de verdade.
+    init: true
+    env_file:
+      - .env
+    environment:
+      # dentro da rede do compose o host do banco é o serviço, não localhost
+      DATABASE_URL: mysql://${MYSQL_USER:-myaihub}:${MYSQL_PASSWORD:-myaihub}@mysql:3306/${MYSQL_DATABASE:-myaihub}
+      API_PORT: 3333
+    ports:
+      - '${API_PORT:-3333}:3333'
+    volumes:
+      - .:/app
+      - api-node-modules:/app/node_modules
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      # sem curl na imagem: usa o http nativo do Node, que já está lá.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:3333/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      # No bind mount do Windows a migração pendente (13 migrations, primeira
+      # subida) mediu ~4min — I/O do bind mount, não trava. start_period curto
+      # (30s) fez o compose declarar o container morto NO MEIO da migração e
+      # matá-lo, corrompendo o registro em `_prisma_migrations` (P3009).
+      start_period: 300s
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: dev
+    container_name: myaihub-web
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      # SEM prefixo VITE_: não pode vazar para o bundle do cliente. O client
+      # usa '/api' relativo (same-origin, é o que faz os cookies httpOnly
+      # funcionarem) e o Vite faz o proxy — só o alvo do proxy precisa disto,
+      # e "localhost" aqui seria o loopback do container `web`, não da `api`.
+      API_URL: http://api:3333
+    ports:
+      - '${WEB_PORT:-5173}:5173'
+    volumes:
+      - .:/app
+      - web-node-modules:/app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  api-node-modules:
+  web-node-modules:

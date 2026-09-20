@@ -1,0 +1,63 @@
+{
+  "name": "myaihub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run docker:up:only && concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch --clear-screen=false apps/api/src/main.ts",
+    "dev:web": "npm run dev -w @myaihub/web",
+    "build": "npm run build -w @myaihub/shared && npm run build -w @myaihub/api && npm run build -w @myaihub/web",
+    "typecheck": "tsc -b --pretty && tsc -p apps/api/tsconfig.test.json --pretty",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "e2e": "npm run build -w @myaihub/web && playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:api": "dotenv -e .env.e2e -e .env -- tsx watch --clear-screen=false apps/api/src/main.ts",
+    "e2e:web": "dotenv -e .env.e2e -e .env -- npm run preview -w @myaihub/web -- --port 4173 --strictPort",
+    "e2e:setup": "dotenv -e .env.e2e -e .env -- prisma migrate deploy --schema apps/api/prisma/schema.prisma && dotenv -e .env.e2e -e .env -- tsx apps/api/src/scripts/seed.ts && dotenv -e .env.e2e -e .env -- tsx apps/api/src/scripts/seed-e2e.ts",
+    "test:watch": "vitest",
+    "db:migrate": "npm run db:migrate -w @myaihub/api",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w @myaihub/api",
+    "db:seed": "npm run db:seed -w @myaihub/api",
+    "db:reset": "npm run db:reset -w @myaihub/api",
+    "db:studio": "npm run db:studio -w @myaihub/api",
+    "docker:up": "docker compose up -d --wait mysql adminer && npm run db:migrate:deploy && npm run db:seed",
+    "docker:up:only": "docker compose up -d --wait mysql adminer",
+    "docker:restart": "docker compose restart",
+    "docker:down": "docker compose down",
+    "docker:down:clean": "docker compose down && rimraf \"C:/DockerRuntime/myaihub/mysql\"",
+    "clean": "rimraf \"{apps,packages}/*/dist\" \"apps/web/.tsbuild\" \"{apps,packages}/*/*.tsbuildinfo\"",
+    "test:unit": "vitest run --exclude \"**/tests/**\"",
+    "verify": "npm run lint && npm run typecheck && npm run test:unit && npm run build",
+    "verify:full": "npm run lint && npm run typecheck && npm test && npm run build",
+    "db:setup": "npm run db:migrate:deploy && npm run db:seed",
+    "smoke:journey": "tsx apps/api/src/scripts/smoke-journey.ts",
+    "smoke:routing": "npm run smoke:routing -w @myaihub/api",
+    "smoke:brand": "tsx apps/api/src/scripts/smoke-brand.ts",
+    "scan:site": "tsx apps/api/src/scripts/scan-site.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.18.13",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.2",
+    "vitest": "^3.2.4"
+  }
+}

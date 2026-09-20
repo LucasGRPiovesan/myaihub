@@ -1,0 +1,51 @@
+node_modules/
+dist/
+build/
+.tsbuild/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# env — segredos nunca vão para o repositório
+.env
+.env.*
+!.env.example
+# O do E2E é VERSIONADO: não há segredo nele — banco descartável, provider
+# fake e credenciais que não valem em lugar nenhum. Sem ele, o E2E não roda
+# numa máquina nova, e um passo de CI que depende de arquivo ausente é um
+# passo que ninguém consegue reproduzir localmente.
+!.env.e2e
+
+# storage local de MediaAsset (dev)
+storage/
+
+# logs
+*.log
+npm-debug.log*
+
+# config pessoal do Claude Code (settings.json e versionado, este nao)
+.claude/settings.local.json
+
+# editores / SO
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# playwright
+test-results/
+playwright-report/
+.playwright-mcp/
+
+# scratch de screenshot local
+.scratch-shots/
+
+# cache local do rtk
+.rtk/
+
+# artefato local do vercel (não é código)
+.vercel/
+
+# uploads do usuário: não é código-fonte
+.media/

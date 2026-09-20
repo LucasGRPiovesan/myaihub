@@ -1,0 +1,1252 @@
+// MyAIHub — schema Prisma
+//
+// Escopo atual: Fase 1 (identity + auditoria). Os demais bounded contexts
+// entram nas suas fases, com migrações incrementais.
+//
+// Convenções:
+//   - IDs são ULID (Char(26)): ordenáveis por tempo, não sequenciais, seguros
+//     para expor. Gerados na aplicação, não no banco.
+//   - Todo modelo tenant-owned carrega `accountId`, mesmo quando alcançável por
+//     join — é o que permite o tenantGuard e os índices de escopo (§4.5).
+//   - Todo modelo novo PRECISA ser classificado em src/shared/infrastructure/
+//     prisma/tenant-policy.ts, senão o guard falha fechado no boot.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
+  // Banco descartável usado por `prisma migrate dev` para detectar drift.
+  // Provisionado pelo docker/mysql-init — o usuário da aplicação não tem
+  // (nem deve ter) permissão de CREATE DATABASE.
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum MembershipRole {
+  OWNER
+  MEMBER
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// Tenant. Todo recurso de negócio pertence a uma Account.
+model Account {
+  id        String        @id @db.Char(26)
+  name      String        @db.VarChar(120)
+  slug      String        @unique @db.VarChar(140)
+  status    AccountStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  memberships AccountMembership[]
+  auditLogs   AuditLog[]
+  projects    Project[]
+  agents      Agent[]
+  campaigns   Campaign[]
+
+  @@index([createdAt])
+  @@map("accounts")
+}
+
+/// Usuário da plataforma. Pertence a uma ou mais Accounts via membership.
+model User {
+  id           String     @id @db.Char(26)
+  name         String     @db.VarChar(120)
+  email        String     @unique @db.VarChar(254)
+  passwordHash String     @db.VarChar(255)
+  role         UserRole   @default(USER)
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  memberships   AccountMembership[]
+  refreshTokens RefreshToken[]
+
+  @@index([createdAt])
+  @@map("users")
+}
+
+model AccountMembership {
+  id        String         @id @db.Char(26)
+  accountId String         @db.Char(26)
+  userId    String         @db.Char(26)
+  role      MembershipRole @default(MEMBER)
+  createdAt DateTime       @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId])
+  @@index([userId])
+  @@map("account_memberships")
+}
+
+/// Refresh token rotativo.
+///
+/// Guardamos apenas o SHA-256 do token — o valor em claro nunca toca o banco.
+/// Tokens de uma mesma sessão compartilham `sessionId`; a rotação encadeia via
+/// `replacedById`. Reuso de um token já rotacionado revoga a sessão inteira
+/// (detecção de roubo de token).
+model RefreshToken {
+  id           String    @id @db.Char(26)
+  sessionId    String    @db.Char(26)
+  userId       String    @db.Char(26)
+  accountId    String    @db.Char(26)
+  tokenHash    String    @unique @db.Char(64)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @db.Char(26)
+  userAgent    String?   @db.VarChar(400)
+  ip           String?   @db.VarChar(64)
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([sessionId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// =============================================================================
+// Projects (Fase 5) — o workspace principal
+// =============================================================================
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CapabilityType {
+  CAMPAIGNS
+}
+
+enum ConfigurationSource {
+  USER
+  MYAIHUB
+  SYSTEM
+}
+
+/// Workspace operacional. Pertence à Account, nunca ao usuário.
+model Project {
+  id        String        @id @db.Char(26)
+  accountId String        @db.Char(26)
+  name      String        @db.VarChar(120)
+  slug      String        @db.VarChar(140)
+  status    ProjectStatus @default(ACTIVE)
+
+  /// Ponteiro para a versão corrente do perfil (§4.1).
+  currentProfileVersionId String? @db.Char(26)
+  /// Ponteiro para a identidade de marca corrente (§4.4). Nulo até existir uma.
+  currentBrandIdentityVersionId String? @db.Char(26)
+  /// Versionamento otimista: quem grava precisa dizer qual versão leu (§70).
+  lockVersion             Int     @default(0)
+
+  createdBy String   @db.Char(26)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account               Account                       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  profileVersions       ProjectProfileVersion[]
+  brandIdentityVersions ProjectBrandIdentityVersion[]
+  knowledgeSources      ProjectKnowledgeSource[]
+  knowledgeSnapshots    KnowledgeSnapshot[]
+  capabilities          ProjectCapability[]
+  campaigns             Campaign[]
+
+  @@unique([accountId, slug])
+  @@index([accountId, status, createdAt])
+  @@map("projects")
+}
+
+/// Versão IMUTÁVEL do perfil canônico do projeto.
+model ProjectProfileVersion {
+  id            String @id @db.Char(26)
+  accountId     String @db.Char(26)
+  projectId     String @db.Char(26)
+  versionNumber Int
+
+  canonicalConfig        Json
+  canonicalSchemaVersion Int
+  /// Projeção humana, derivada do canônico no momento da criação.
+  humanSummary           Json
+
+  source            ConfigurationSource
+  reason            String  @db.VarChar(300)
+  previousVersionId String? @db.Char(26)
+  createdBy         String? @db.Char(26)
+
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, versionNumber])
+  @@index([accountId, createdAt])
+  @@map("project_profile_versions")
+}
+
+/// Registro/ativação de um módulo no projeto (§40). Sem lógica genérica.
+model ProjectCapability {
+  id        String         @id @db.Char(26)
+  accountId String         @db.Char(26)
+  projectId String         @db.Char(26)
+  type      CapabilityType
+  enabled   Boolean        @default(true)
+  settings  Json?
+  enabledAt DateTime       @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, type])
+  @@index([accountId, type])
+  @@map("project_capabilities")
+}
+
+// =============================================================================
+// Agents (Fase 6)
+// =============================================================================
+
+enum AgentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Agente reutilizável.
+///
+/// Pertence à ACCOUNT, nunca a um Project (§10): o mesmo Philips pode atuar em
+/// campanhas de projetos diferentes. Project e Campaign especializam a atuação
+/// dele; o Agent Core permanece.
+model Agent {
+  id        String      @id @db.Char(26)
+  accountId String      @db.Char(26)
+  name      String      @db.VarChar(80)
+  slug      String      @db.VarChar(100)
+  role      String      @db.VarChar(160)
+  status    AgentStatus @default(ACTIVE)
+
+  currentVersionId String? @db.Char(26)
+  lockVersion      Int     @default(0)
+
+  /// Playbook de ofício de onde este agente nasceu.
+  ///
+  /// Duplica o que já está no canônico, e de propósito: o canônico continua
+  /// sendo a verdade para o OS, mas a pergunta do ADMIN — "quantos agentes
+  /// vieram deste ofício?" — é cross-tenant e precisa de índice. Buscar dentro
+  /// de JSON de versão corrente, em todas as contas, não escala.
+  playbookKey String? @db.VarChar(60)
+
+  createdBy String   @db.Char(26)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  versions  AgentVersion[]
+  campaigns Campaign[]
+
+  @@unique([accountId, slug])
+  @@index([accountId, status, createdAt])
+  @@index([playbookKey])
+  @@map("agents")
+}
+
+/// Versão IMUTÁVEL da configuração canônica do agente (§18).
+model AgentVersion {
+  id            String @id @db.Char(26)
+  accountId     String @db.Char(26)
+  agentId       String @db.Char(26)
+  versionNumber Int
+
+  canonicalConfig        Json
+  canonicalSchemaVersion Int
+  humanSummary           Json
+
+  source            ConfigurationSource
+  reason            String  @db.VarChar(300)
+  previousVersionId String? @db.Char(26)
+  createdBy         String? @db.Char(26)
+
+  createdAt DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, versionNumber])
+  @@index([accountId, createdAt])
+  @@map("agent_versions")
+}
+
+/// Arquivo enviado pelo usuário (§ invariante 4: upload é MediaAsset).
+///
+/// Os BYTES ficam fora do banco, atrás do port `MediaStorage`: um print de 2MB
+/// por linha transformaria toda leitura de conversa numa transferência pesada.
+/// A linha guarda o metadado e a chave — trocar disco local por S3 não mexe aqui.
+model MediaAsset {
+  id        String @id @db.Char(26)
+  accountId String @db.Char(26)
+
+  mimeType String @db.VarChar(120)
+  byteSize Int
+  /// Nome original, só para exibição. NUNCA usado para montar caminho em disco.
+  fileName String @db.VarChar(255)
+  /// Endereço no storage. Opaco para o domínio.
+  storageKey String @db.VarChar(300)
+
+  width  Int?
+  height Int?
+
+  uploadedBy String   @db.Char(26)
+  createdAt  DateTime @default(now())
+
+  @@index([accountId, createdAt])
+  @@map("media_assets")
+}
+
+// =============================================================================
+// Campaigns (Fase 7)
+// =============================================================================
+
+enum CampaignStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
+enum DeploymentStatus {
+  ACTIVE
+  SUPERSEDED
+  PAUSED
+}
+
+/// Campanha: um Agent atuando dentro de um Project com um objetivo específico.
+///
+/// O binding com o Agent é COLUNA, não JSON: é o que permite responder "quais
+/// campanhas usam este agente?" — pergunta que a tela de agente faz e que um
+/// JSON não responde sem varrer tudo (§16, risco 8).
+model Campaign {
+  id        String         @id @db.Char(26)
+  accountId String         @db.Char(26)
+  projectId String         @db.Char(26)
+  /// Nulo enquanto a campanha não tem agente vinculado — publicar exige um.
+  agentId   String?        @db.Char(26)
+  name      String         @db.VarChar(120)
+  slug      String         @db.VarChar(140)
+  status    CampaignStatus @default(DRAFT)
+
+  /// Identificador da URL pública. Vive na CAMPANHA, não no deployment: ele é
+  /// preservado entre republicações (§4.3) e um `@unique` por deployment
+  /// impediria exatamente isso. Nulo até a primeira publicação.
+  publicId String? @unique @db.Char(26)
+
+  currentVersionId String? @db.Char(26)
+  lockVersion      Int     @default(0)
+
+  createdBy String   @db.Char(26)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account     Account                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  project     Project                    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Restrict: apagar um agente que está no ar em alguma campanha quebraria a
+  /// publicação. Desvincular é uma decisão explícita, não um efeito colateral.
+  agent       Agent?                     @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  versions    CampaignVersion[]
+  deployments CampaignPublicDeployment[]
+  sessions    ConversationSession[]
+
+  @@unique([projectId, slug])
+  @@index([accountId, status, createdAt])
+  @@index([accountId, projectId, createdAt])
+  @@index([accountId, agentId])
+  @@map("campaigns")
+}
+
+/// Versão IMUTÁVEL da estratégia canônica da campanha.
+model CampaignVersion {
+  id            String @id @db.Char(26)
+  accountId     String @db.Char(26)
+  campaignId    String @db.Char(26)
+  versionNumber Int
+
+  canonicalConfig        Json
+  canonicalSchemaVersion Int
+  humanSummary           Json
+
+  source            ConfigurationSource
+  reason            String  @db.VarChar(300)
+  previousVersionId String? @db.Char(26)
+  createdBy         String? @db.Char(26)
+
+  createdAt DateTime @default(now())
+
+  campaign    Campaign                   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  deployments CampaignPublicDeployment[]
+
+  @@unique([campaignId, versionNumber])
+  @@index([accountId, createdAt])
+  @@map("campaign_versions")
+}
+
+/// Publicação imutável (§4.3).
+///
+/// `manifest` congela QUAIS versões estavam valendo. Alterar o Agent, o Project
+/// ou a Campaign depois disso não muda o que está no ar — exige republicar. É a
+/// diferença entre "o que o usuário configurou" e "o que o público está vendo".
+model CampaignPublicDeployment {
+  id         String @id @db.Char(26)
+  accountId  String @db.Char(26)
+  campaignId String @db.Char(26)
+
+  deploymentNumber Int
+  status           DeploymentStatus @default(ACTIVE)
+
+  campaignVersionId String @db.Char(26)
+
+  /// DeploymentManifest — IMUTÁVEL. Nunca sofre UPDATE.
+  manifest     Json
+  /// sha256 do manifest canonicalizado. Detecta adulteração e dá identidade.
+  manifestHash String @db.Char(64)
+
+  publishedBy  String    @db.Char(26)
+  publishedAt  DateTime  @default(now())
+  supersededAt DateTime?
+
+  campaign        Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignVersion CampaignVersion @relation(fields: [campaignVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([campaignId, deploymentNumber])
+  @@index([accountId, status, publishedAt])
+  @@index([campaignId, status])
+  @@map("campaign_public_deployments")
+}
+
+// =============================================================================
+// MyAIHub OS (Fase 4)
+// =============================================================================
+
+enum HubMessageRole {
+  USER
+  ASSISTANT
+}
+
+enum HubOperationStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  AWAITING_CONFIRMATION
+}
+
+enum HubScope {
+  ROOT
+  PROJECT
+  AGENT
+  CAMPAIGN
+  /// Playbook de ofício. Escopo de PLATAFORMA: só o admin conversa aqui.
+  PLAYBOOK
+}
+
+/// Master Policy do MyAIHub OS. Fonte de verdade no BANCO, nunca em arquivo (§6).
+model HubPolicy {
+  id        String   @id @db.Char(26)
+  name      String   @unique @db.VarChar(80)
+  currentVersionId String? @db.Char(26)
+  createdAt DateTime @default(now())
+
+  versions HubPolicyVersion[]
+
+  @@map("hub_policies")
+}
+
+/// Versão imutável da policy. Seccionada: o Context Compiler injeta só as
+/// seções que a operação declara precisar, não a policy inteira (§7.4).
+model HubPolicyVersion {
+  id            String @id @db.Char(26)
+  policyId      String @db.Char(26)
+  versionNumber Int
+
+  /// { [sectionKey]: string }
+  sections  Json
+  reason    String   @db.VarChar(300)
+  createdAt DateTime @default(now())
+
+  policy HubPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, versionNumber])
+  @@map("hub_policy_versions")
+}
+
+/// Playbook de OFÍCIO: o que faz alguém ser bom NAQUELE papel.
+///
+/// É conhecimento de PLATAFORMA, não da conta: vale para todo cliente que criar
+/// um agente daquele tipo. Distinto de KnowledgeSource (Fase 5), que é o
+/// conhecimento do NEGÓCIO de uma conta e é usado em runtime — o playbook é
+/// usado só em tempo de PROJETO, para o OS saber desenhar o agente.
+model Playbook {
+  id  String @id @db.Char(26)
+  key String @unique @db.VarChar(60)
+
+  currentVersionId String?  @db.Char(26)
+  createdAt        DateTime @default(now())
+
+  versions PlaybookVersion[]
+
+  @@map("playbooks")
+}
+
+/// Versão imutável do playbook. O admin edita criando versão nova; a semente
+/// nunca sobrescreve o que já está no banco (mesma regra da Master Policy, §27).
+model PlaybookVersion {
+  id            String @id @db.Char(26)
+  playbookId    String @db.Char(26)
+  versionNumber Int
+
+  /// AgentPlaybook serializado: label, appliesTo, thesis, principles, ...
+  content   Json
+  reason    String   @db.VarChar(300)
+  createdAt DateTime @default(now())
+
+  playbook Playbook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+
+  @@unique([playbookId, versionNumber])
+  @@map("playbook_versions")
+}
+
+/// Correção de ofício aplicada num agente que, na leitura do OS, deveria valer
+/// para TODO agente daquele papel.
+///
+/// Existe para resolver um problema de escala que não é técnico: se toda
+/// calibração de ofício dependesse do admin, cada usuário abriria um chamado e
+/// esperaria. Aqui o OS corrige o agente na hora — o usuário não espera — e
+/// registra a correção como PAUTA. Quando a mesma coisa aparece em vários
+/// agentes do mesmo playbook, o admin vê o padrão e decide promovê-la ao ofício.
+///
+/// É o mesmo mecanismo do PlaybookMiss, um nível acima: lá a lacuna é "não
+/// existe playbook para este papel"; aqui é "o playbook existe e está incompleto".
+model PlaybookSuggestion {
+  id          String @id @db.Char(26)
+  accountId   String @db.Char(26)
+  playbookKey String @db.VarChar(60)
+  agentId     String @db.Char(26)
+
+  /// O que o usuário pediu, na leitura do OS.
+  summary String @db.VarChar(300)
+  /// O item como ele entrou no agente — o texto que o admin pode promover.
+  statement String @db.Text
+  /// Faceta em que o item entrou, para o admin saber onde ele cairia.
+  facet String @db.VarChar(30)
+
+  createdAt DateTime @default(now())
+
+  @@index([playbookKey, createdAt])
+  @@map("playbook_suggestions")
+}
+
+/// Papel para o qual NENHUM playbook casou.
+///
+/// É a pauta do admin: a lista, por frequência, do próximo playbook que vale
+/// escrever. Sem isto a lacuna é invisível — o agente nasce genérico e ninguém
+/// fica sabendo.
+model PlaybookMiss {
+  id        String   @id @db.Char(26)
+  accountId String   @db.Char(26)
+  role      String   @db.VarChar(300)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("playbook_misses")
+}
+
+/// Conversa com o MyAIHub OS. Nunca se mistura com o Public Chat (§53).
+model HubConversation {
+  id        String   @id @db.Char(26)
+  accountId String   @db.Char(26)
+  userId    String   @db.Char(26)
+  scope     HubScope
+  scopeId   String?  @db.Char(26)
+  title     String?  @db.VarChar(120)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages   HubMessage[]
+  operations HubOperation[]
+
+  @@index([accountId, userId, updatedAt])
+  @@index([accountId, scope, scopeId])
+  @@map("hub_conversations")
+}
+
+/// Fala da conversa com o OS.
+model HubMessage {
+  id             String         @id @db.Char(26)
+  accountId      String         @db.Char(26)
+  conversationId String         @db.Char(26)
+  role           HubMessageRole
+  content        String         @db.Text
+  /// Ids de MediaAsset anexados à fala. O transcrito precisa deles para
+  /// remontar o que o usuário mandou; sem isto, recarregar perde a imagem.
+  attachments    Json?
+  createdAt      DateTime       @default(now())
+
+  conversation HubConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("hub_messages")
+}
+
+/// Execução de uma operação tipada do OS.
+model HubOperation {
+  id             String             @id @db.Char(26)
+  accountId      String             @db.Char(26)
+  conversationId String             @db.Char(26)
+  operation      String             @db.VarChar(60)
+  status         HubOperationStatus @default(RUNNING)
+
+  /// Fala que originou a operação — início da cadeia de rastreabilidade (§4.2).
+  triggeredByMessageId String? @db.Char(26)
+  policyVersionId      String? @db.Char(26)
+  policySections       Json?
+
+  errorCode   String?   @db.VarChar(60)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  conversation HubConversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  events       HubOperationEvent[]
+  proposals    ConfigurationProposal[]
+  changes      ConfigurationChange[]
+
+  @@index([accountId, createdAt])
+  @@index([conversationId, createdAt])
+  @@map("hub_operations")
+}
+
+/// Evento emitido durante a operação. Persistido para permitir replay do SSE
+/// depois de uma reconexão (§11).
+model HubOperationEvent {
+  id          String   @id @db.Char(26)
+  accountId   String   @db.Char(26)
+  operationId String   @db.Char(26)
+  seq         Int
+  payload     Json
+  createdAt   DateTime @default(now())
+
+  operation HubOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@unique([operationId, seq])
+  @@map("hub_operation_events")
+}
+
+/// Mudança AI_SUGGESTED aguardando confirmação do usuário (§65).
+model ConfigurationProposal {
+  id          String @id @db.Char(26)
+  accountId   String @db.Char(26)
+  operationId String @db.Char(26)
+
+  entityType String @db.VarChar(40)
+  entityId   String @db.Char(26)
+
+  /// CanonicalMutation[] tipadas, ainda não aplicadas.
+  mutations         Json
+  interpretedIntent String @db.VarChar(300)
+  rationale         String @db.Text
+  humanSummary      Json
+
+  status      String    @default("PENDING") @db.VarChar(20)
+  decidedBy   String?   @db.Char(26)
+  decidedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  operation HubOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, status, createdAt])
+  @@map("configuration_proposals")
+}
+
+/// A MUDANÇA que produziu uma versão — não o estado dela (§4.2).
+///
+/// `*Version` guarda o documento; aqui fica o delta semântico e a proveniência.
+/// É o que responde "como a fala 'quero Philips mais objetivo' virou esta config".
+model ConfigurationChange {
+  id        String @id @db.Char(26)
+  accountId String @db.Char(26)
+
+  entityType String @db.VarChar(40)
+  entityId   String @db.Char(26)
+
+  fromVersionId String? @db.Char(26)
+  toVersionId   String  @db.Char(26)
+  fromVersion   Int?
+  toVersion     Int
+
+  source        ConfigurationSource
+  actorUserId   String?             @db.Char(26)
+  hubOperationId String?            @db.Char(26)
+  hubMessageId   String?            @db.Char(26)
+
+  interpretedIntent String @db.VarChar(300)
+  /// Lista de CanonicalMutation aplicadas. NÃO duplica o documento canônico.
+  mutations         Json
+  rationale         String @db.Text
+
+  createdAt DateTime @default(now())
+
+  operation HubOperation? @relation(fields: [hubOperationId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, entityType, entityId, createdAt])
+  @@index([accountId, createdAt])
+  @@map("configuration_changes")
+}
+
+enum AiProvider {
+  FAKE
+  GEMINI
+  OPENAI
+  ANTHROPIC
+}
+
+enum AiCallStatus {
+  SUCCESS
+  PROVIDER_ERROR
+  TIMEOUT
+  INVALID_OUTPUT
+}
+
+/// Tabela de preços por provider/modelo, versionada no tempo.
+///
+/// `effectiveFrom` permite reconstituir qual preço valia quando a chamada
+/// aconteceu. Histórico NUNCA é recalculado com preço novo (§38).
+model AiModelPricing {
+  id                String     @id @db.Char(26)
+  provider          AiProvider
+  model             String     @db.VarChar(120)
+  /// Micros de USD por 1M de tokens. Inteiro para não somar erro de float.
+  inputMicros       BigInt
+  cachedInputMicros BigInt     @default(0)
+  cacheWriteMicros  BigInt     @default(0)
+  outputMicros      BigInt
+  reasoningMicros   BigInt     @default(0)
+  currency          String     @default("USD") @db.Char(3)
+  effectiveFrom     DateTime
+  /// Rótulo da fonte do preço (ex.: "google-ai-pricing-2026-01"). Rastreabilidade.
+  sourceLabel       String     @db.VarChar(120)
+  createdAt         DateTime   @default(now())
+
+  calls AiCall[]
+
+  @@unique([provider, model, effectiveFrom])
+  @@index([provider, model, effectiveFrom])
+  @@map("ai_model_pricing")
+}
+
+/// Uma chamada a um provider de LLM, com uso e custo (§37, §38).
+///
+/// Tenant-scoped: custo é dado da conta. `pricingSnapshot` congela a linha de
+/// preço aplicada, então mesmo que AiModelPricing mude ou suma, o custo
+/// histórico continua explicável.
+model AiCall {
+  id        String @id @db.Char(26)
+  accountId String @db.Char(26)
+
+  /// Papel que originou a chamada (hub.reasoning, agent.runtime, ...).
+  role     String       @db.VarChar(40)
+  provider AiProvider
+  model    String       @db.VarChar(120)
+  status   AiCallStatus @default(SUCCESS)
+
+  inputTokens       Int @default(0)
+  cachedInputTokens Int @default(0)
+  cacheWriteTokens  Int @default(0)
+  outputTokens      Int @default(0)
+  reasoningTokens   Int @default(0)
+  toolCalls         Int @default(0)
+  totalTokens       Int @default(0)
+  latencyMs         Int @default(0)
+
+  pricingVersionId String? @db.Char(26)
+  pricingSnapshot  Json?
+  costMicros       BigInt  @default(0)
+  currency         String  @default("USD") @db.Char(3)
+
+  /// Policy usada, quando a chamada veio do MyAIHub OS (§8 dos ajustes).
+  policyVersionId String? @db.Char(26)
+  policySections  Json?
+
+  errorCode String?  @db.VarChar(60)
+  createdAt DateTime @default(now())
+
+  pricing AiModelPricing? @relation(fields: [pricingVersionId], references: [id], onDelete: SetNull)
+  trace   ExecutionTrace?
+
+  @@index([accountId, createdAt])
+  @@index([accountId, provider, model])
+  @@index([accountId, role, createdAt])
+  @@map("ai_calls")
+}
+
+/// Registro do que EXATAMENTE foi enviado ao provider.
+///
+/// "Reproduzível" aqui significa reconstruir contexto, configuração e request —
+/// não prometer resposta byte-idêntica da LLM (§8.1 da arquitetura).
+model ExecutionTrace {
+  id        String @id @db.Char(26)
+  accountId String @db.Char(26)
+  aiCallId  String @unique @db.Char(26)
+
+  /// Preenchidos conforme os módulos das fases seguintes existirem.
+  sessionId              String? @db.Char(26)
+  hubOperationId         String? @db.Char(26)
+  deploymentId           String? @db.Char(26)
+  deploymentManifestHash String? @db.Char(64)
+
+  runtimeVersion         String @db.VarChar(20)
+  contextCompilerVersion String @db.VarChar(20)
+  promptCompilerVersion  String @db.VarChar(20)
+
+  provider         AiProvider
+  model            String     @db.VarChar(120)
+  generationParams Json
+
+  /// Blocos que entraram no contexto: id, kind, trust, hash, tokens, e o que foi cortado.
+  contextBlocks   Json
+  /// Request efetivamente enviado ao provider.
+  compiledRequest Json
+  /// Trechos de conhecimento que ENTRARAM no contexto (§8.1).
+  ///
+  /// O manifest congela QUAL snapshot vale; isto diz o que dele foi de fato
+  /// usado naquele turno. Sem os dois, "reproduzível" ficaria pela metade: dá
+  /// para saber que a base era aquela, e não por que o agente respondeu o que
+  /// respondeu. Guarda ids e pontuação, nunca o texto — o conteúdo é do
+  /// cliente e o trace é lido por operadores.
+  knowledgeRefs   Json?
+  violations      Json?
+
+  createdAt DateTime @default(now())
+
+  aiCall AiCall @relation(fields: [aiCallId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([hubOperationId])
+  @@map("execution_traces")
+}
+
+/// Trilha de auditoria. Ver docs/ARCHITECTURE.md §64.
+/// `metadata` nunca contém senha, token ou chave de API.
+model AuditLog {
+  id          String   @id @db.Char(26)
+  accountId   String   @db.Char(26)
+  actorUserId String?  @db.Char(26)
+  action      String   @db.VarChar(80)
+  entityType  String   @db.VarChar(60)
+  entityId    String?  @db.Char(26)
+  metadata    Json?
+  requestId   String?  @db.VarChar(40)
+  ip          String?  @db.VarChar(64)
+  createdAt   DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([accountId, entityType, entityId])
+  @@index([accountId, action, createdAt])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// Brand Identity + Knowledge (Fase 5)
+// =============================================================================
+
+/// Versão IMUTÁVEL da identidade de marca do projeto.
+///
+/// Mesma forma do perfil: documento canônico + versão + ponteiro. Existe
+/// separada do perfil porque muda por outro motivo e em outro ritmo — trocar a
+/// cor da marca não deveria criar uma versão do que o negócio VENDE, e uma
+/// republicação precisa saber qual das duas coisas mudou.
+model ProjectBrandIdentityVersion {
+  id            String @id @db.Char(26)
+  accountId     String @db.Char(26)
+  projectId     String @db.Char(26)
+  versionNumber Int
+
+  canonicalConfig        Json
+  canonicalSchemaVersion Int
+  humanSummary           Json
+
+  source            ConfigurationSource
+  reason            String  @db.VarChar(300)
+  previousVersionId String? @db.Char(26)
+  createdBy         String? @db.Char(26)
+
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, versionNumber])
+  @@index([accountId, createdAt])
+  @@map("project_brand_identity_versions")
+}
+
+enum KnowledgeSourceKind {
+  /// Texto colado pelo usuário. Não tem o que reindexar: a revisão é o texto.
+  TEXT
+  /// Página web. Reindexar busca de novo e compara o hash.
+  URL
+}
+
+enum KnowledgeSourceStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+/// Uma fonte de conhecimento do NEGÓCIO, do projeto (§4.4).
+///
+/// Distinta de Playbook: aquilo é ofício de plataforma, usado em tempo de
+/// projeto; isto é o que a empresa sabe, e é lido em RUNTIME pelo agente.
+model ProjectKnowledgeSource {
+  id        String                @id @db.Char(26)
+  accountId String                @db.Char(26)
+  projectId String                @db.Char(26)
+  kind      KnowledgeSourceKind
+  status    KnowledgeSourceStatus @default(PENDING)
+
+  title String  @db.VarChar(200)
+  uri   String? @db.VarChar(2000)
+
+  /// Ponteiro para a revisão corrente. Revisão nova NÃO altera as antigas.
+  currentRevisionId String? @db.Char(26)
+  /// Por que a última indexação falhou. Sem isto, "FAILED" não ajuda ninguém.
+  lastError         String? @db.VarChar(300)
+
+  createdBy String   @db.Char(26)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project       Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  revisions     KnowledgeRevision[]
+  snapshotItems KnowledgeSnapshotItem[]
+
+  @@index([accountId, projectId, createdAt])
+  @@map("project_knowledge_sources")
+}
+
+/// Conteúdo extraído de uma fonte, num instante. IMUTÁVEL.
+///
+/// Reindexar cria revisão NOVA; deployments existentes seguem apontando para a
+/// antiga pelo snapshot. É o que faz a publicação continuar reproduzível quando
+/// o site do cliente muda no dia seguinte.
+model KnowledgeRevision {
+  id        String @id @db.Char(26)
+  accountId String @db.Char(26)
+  sourceId  String @db.Char(26)
+
+  revisionNumber   Int
+  /// sha256 do conteúdo extraído. Reindexação sem mudança não cria revisão.
+  contentHash      String @db.Char(64)
+  extractedContent String @db.MediumText
+  /// Tamanho em caracteres, para o compilador orçar contexto sem carregar tudo.
+  contentLength    Int
+
+  extractedAt DateTime @default(now())
+
+  source        ProjectKnowledgeSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  snapshotItems KnowledgeSnapshotItem[]
+
+  @@unique([sourceId, revisionNumber])
+  @@index([accountId, extractedAt])
+  @@map("knowledge_revisions")
+}
+
+/// Conjunto CONGELADO de fontes + revisões, referenciado pelo manifest (§4.4).
+model KnowledgeSnapshot {
+  id        String @id @db.Char(26)
+  accountId String @db.Char(26)
+  projectId String @db.Char(26)
+
+  /// Quantas fontes entraram. Evita contar por join numa tela de listagem.
+  itemCount Int      @default(0)
+  createdAt DateTime @default(now())
+
+  project Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items   KnowledgeSnapshotItem[]
+
+  @@index([accountId, projectId, createdAt])
+  @@map("knowledge_snapshots")
+}
+
+model KnowledgeSnapshotItem {
+  id         String @id @db.Char(26)
+  accountId  String @db.Char(26)
+  snapshotId String @db.Char(26)
+  sourceId   String @db.Char(26)
+  revisionId String @db.Char(26)
+
+  snapshot KnowledgeSnapshot      @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  source   ProjectKnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  revision KnowledgeRevision      @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+
+  @@unique([snapshotId, sourceId])
+  @@index([accountId, snapshotId])
+  @@map("knowledge_snapshot_items")
+}
+
+// =============================================================================
+// Conversations (Fase 8)
+// =============================================================================
+
+enum ConversationChannel {
+  /// Conversa real, servida pela publicação. É o que a Fase 10 mede.
+  PUBLIC
+  /// Teste interno. Persiste para sobreviver a um reload, mas NÃO entra em
+  /// métrica: experimento que suja o relatório faz o relatório deixar de servir.
+  LAB
+}
+
+enum ConversationRole {
+  VISITOR
+  AGENT
+}
+
+enum SessionEventType {
+  SESSION_STARTED
+  MESSAGE_RECEIVED
+  MESSAGE_SENT
+  RULE_VIOLATION
+  CTA_OFFERED
+  OBJECTIVE_REACHED
+}
+
+enum SessionEventSource {
+  /// Observado por código sobre o que aconteceu de fato.
+  OBSERVED
+  /// Declarado pelo modelo. Nunca vale como verdade sozinho (§6).
+  DECLARED
+}
+
+/// Uma conversa. Ligada ao DEPLOYMENT, não a versões soltas (§8).
+///
+/// É o que garante que republicar não altere conversa em andamento: a sessão
+/// nasce com um deploymentId e morre com ele.
+/// Uma conversa não tem ESTADO de aberta/encerrada, e isso é deliberado.
+///
+/// Encerrar exige um gatilho: um job de expiração por inatividade, ou uma
+/// ação explícita. Nenhum dos dois existe, e uma coluna que nunca sai de OPEN
+/// mente sobre o que o sistema sabe. Ela entra junto do gatilho.
+model ConversationSession {
+  id        String              @id @db.Char(26)
+  accountId String              @db.Char(26)
+  channel   ConversationChannel
+
+  /// Nulo no Lab sem campanha: ali o teste é do agente, direto.
+  campaignId   String? @db.Char(26)
+  deploymentId String? @db.Char(26)
+  projectId    String? @db.Char(26)
+  agentId      String  @db.Char(26)
+
+  /// Cenário escrito no Lab. Faz parte da conversa: sem ele, reabrir uma sessão
+  /// de teste devolveria outro agente.
+  scenario   String? @db.Text
+
+  messageCount   Int    @default(0)
+  totalTokens    Int    @default(0)
+  costMicros     BigInt @default(0)
+  violationCount Int    @default(0)
+
+  startedAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  campaign Campaign?             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  messages ConversationMessage[]
+  state    ConversationState?
+  events   SessionEvent[]
+
+  @@index([accountId, channel, startedAt])
+  @@index([accountId, campaignId, startedAt])
+  @@index([accountId, agentId, startedAt])
+  @@map("conversation_sessions")
+}
+
+/// Fala da conversa. `seq` ordena sem depender do relógio.
+model ConversationMessage {
+  id        String           @id @db.Char(26)
+  accountId String           @db.Char(26)
+  sessionId String           @db.Char(26)
+  seq       Int
+  role      ConversationRole
+  content   String           @db.Text
+
+  /// Violações determinísticas da resposta. Nulo quando é fala do visitante.
+  violations Json?
+  aiCallId   String?  @db.Char(26)
+  createdAt  DateTime @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, seq])
+  @@index([accountId, createdAt])
+  @@map("conversation_messages")
+}
+
+/// Estado canônico da conversa (§8). Merge controlado pelo use case — o modelo
+/// PROPÕE um patch tipado, nunca sobrescreve o documento.
+model ConversationState {
+  sessionId String @id @db.Char(26)
+  accountId String @db.Char(26)
+
+  /// Fatos que o visitante declarou. Efêmeros: são DELE, não configuração.
+  facts    Json
+  /// Sinais lidos da conversa (interesse, objeção, urgência).
+  signals  Json
+  /// Progresso rumo ao objetivo da campanha.
+  progress Json
+
+  updatedAt DateTime @updatedAt
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, updatedAt])
+  @@map("conversation_states")
+}
+
+/// Evento rastreável emitido pela sessão. É a matéria-prima da Fase 10.
+///
+/// `source` separa o que o código OBSERVOU do que o modelo DECLAROU. Misturar
+/// os dois faria o dashboard mostrar a opinião do modelo como se fosse medida.
+model SessionEvent {
+  id        String             @id @db.Char(26)
+  accountId String             @db.Char(26)
+  sessionId String             @db.Char(26)
+  type      SessionEventType
+  source    SessionEventSource @default(OBSERVED)
+
+  /// Denormalizado para o dashboard agregar sem join (§4.5).
+  campaignId String?  @db.Char(26)
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, type, createdAt])
+  @@index([accountId, campaignId, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("session_events")
+}
+
+/// Qual provider e modelo atendem cada PAPEL — escolha do admin da plataforma.
+///
+/// O código pede um papel (`hub.reasoning`), nunca um modelo; qual modelo o
+/// atende sempre foi configuração de ambiente. Isto move a decisão para uma
+/// tela, sem mudar a abstração: continua sendo rota por papel, só que editável
+/// por quem administra a plataforma em vez de por quem reinicia o processo.
+///
+/// UNSCOPED de propósito: é da PLATAFORMA, como a Master Policy e os playbooks.
+/// Uma conta não escolhe o modelo que outra usa — e o custo de errar isso seria
+/// um tenant apontando o sistema inteiro para um modelo caro.
+///
+/// Ausente = vale o padrão da env. É o que mantém o boot funcionando num banco
+/// que nunca teve a tela aberta.
+model ModelRoute {
+  /// `hub.reasoning`, `agent.runtime`, ... Um dos `MODEL_ROLES`.
+  role     String @id @db.VarChar(40)
+  provider String @db.VarChar(20)
+  model    String @db.VarChar(120)
+
+  /// Quem trocou. É decisão de plataforma: sem autor, ninguém explica depois
+  /// por que a conta do mês triplicou.
+  updatedBy String   @db.Char(26)
+  updatedAt DateTime @updatedAt
+
+  @@map("model_routes")
+}
+
+enum SystemLimitationStatus {
+  OPEN
+  RESOLVED
+}
+
+/// Ligado/desligado por PROVIDER — decisão do admin, não da presença de chave.
+///
+/// UNSCOPED, como `ModelRoute`: é da PLATAFORMA. Separado da credencial porque
+/// desligar um provider e trocar a chave dele são ações independentes — a tela
+/// pede as duas sem uma exigir a outra.
+model AiProviderSetting {
+  provider  AiProvider @id
+  enabled   Boolean    @default(true)
+  updatedBy String?    @db.Char(26)
+  updatedAt DateTime   @updatedAt
+
+  @@map("ai_provider_settings")
+}
+
+enum AiProviderKeyKind {
+  /// OpenAI, Anthropic: uma chave só, sem distinção de cota.
+  DEFAULT
+  /// Gemini: a gratuita, que a cota do dia serve primeiro.
+  FREE
+  /// Gemini: usada só quando a cota gratuita do dia acaba.
+  PAID
+}
+
+/// As CHAVES de cada provider, por tela — não mais só pela env.
+///
+/// UNSCOPED: a chave é da PLATAFORMA inteira, como o Model Route. Seedada
+/// automaticamente do `.env` no primeiro boot (`GEMINI_API_KEY`,
+/// `GEMINI_API_KEY_PAYED`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`); dali em
+/// diante quem manda é o banco — trocar pela tela não exige reiniciar.
+///
+/// `apiKeyCipher` é AES-256-GCM, com a chave de cifra derivada de
+/// `JWT_ACCESS_SECRET` (nunca gravada — só derivada na hora). Não sai em texto
+/// puro nem para o admin: a tela recebe só os últimos 4 caracteres.
+model AiProviderCredential {
+  provider     AiProvider
+  kind         AiProviderKeyKind
+  apiKeyCipher String            @db.VarChar(600)
+  updatedBy    String?           @db.Char(26)
+  updatedAt    DateTime          @updatedAt
+  createdAt    DateTime          @default(now())
+
+  @@id([provider, kind])
+  @@map("ai_provider_credentials")
+}
+
+/// O que o S.O NÃO conseguiu fazer por limite do SISTEMA — não do pedido.
+///
+/// É a pauta de suporte do admin: cada linha é uma capacidade que falta ao
+/// MyAIHub, registrada no instante em que um usuário esbarrou nela. Por conta
+/// (quem pediu), lida pelo admin com escopo elevado, como a pauta de ofícios.
+model SystemLimitation {
+  id             String                 @id @db.Char(26)
+  accountId      String                 @db.Char(26)
+  userId         String?                @db.Char(26)
+  hubOperationId String?                @db.Char(26)
+  operation      String                 @db.VarChar(60)
+  /// O que o usuário queria, nas palavras do S.O.
+  summary        String                 @db.VarChar(300)
+  /// O que precisaria existir no MyAIHub para ele conseguir.
+  need           String                 @db.VarChar(600)
+  /// A fala que motivou — cortada: é contexto, não transcrito.
+  userMessage    String                 @db.VarChar(1000)
+  status         SystemLimitationStatus @default(OPEN)
+  resolutionNote String?                @db.VarChar(600)
+  resolvedAt     DateTime?
+  createdAt      DateTime               @default(now())
+
+  @@index([status, createdAt])
+  @@index([accountId, createdAt])
+  @@map("system_limitations")
+}

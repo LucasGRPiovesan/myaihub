@@ -1,0 +1,29 @@
+# Os Dockerfiles fazem `COPY . .`. Sem este arquivo, o .env com segredos reais
+# (chaves de provider, segredos JWT) seria assado dentro da imagem — e qualquer
+# um com acesso à imagem os leria com `docker history`.
+.env
+.env.*
+!.env.example
+
+# Reinstalados/reconstruídos dentro da imagem; copiá-los quebra binários nativos
+# e inflaria o contexto de build em centenas de MB.
+node_modules
+**/node_modules
+dist
+build
+.tsbuild
+**/*.tsbuildinfo
+coverage
+
+.git
+.github
+.vscode
+.idea
+
+storage
+test-results
+playwright-report
+*.log
+
+docs
+README.md

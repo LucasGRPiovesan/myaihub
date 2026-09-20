@@ -1,0 +1,17 @@
+{
+  // O build de produção exclui os testes (não devem ir para dist/), mas teste
+  // também é código: este projeto os typecheca sem emitir nada.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // tests/ vive fora de src/ (não deve ir para dist); sem emissão, rootDir
+    // não tem função aqui.
+    "rootDir": ".",
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": []
+}

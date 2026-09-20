@@ -1,0 +1,387 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens do MyAIHub.
+ *
+ * Tudo que é cor passa por token — nenhum componente escreve hex direto.
+ * Os dois temas definem o MESMO conjunto de tokens, então trocar de tema nunca
+ * deixa um valor indefinido. Ver docs/ARCHITECTURE.md §42.
+ */
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /*
+   * Mono é a voz do DADO, não um recurso decorativo: id, token, custo,
+   * timestamp e latência aparecem em toda tela deste produto (ver CLAUDE.md —
+   * o sistema inteiro é medido). Dar a eles uma família própria separa "fato
+   * observado" de "texto escrito por alguém", que é exatamente a distinção
+   * que `guardAgainstRegression` e o dashboard já fazem no domínio.
+   */
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  --radius-card: 0.5rem;
+  --radius-control: 0.375rem;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Paleta: console de instrumentos, não cartão de SaaS.
+ *
+ * Um acento só (o verde-sinal) e o resto é tinta neutra QUENTE — o azul-cinza
+ * genérico (#f7f8fb / indigo #4f46e5) é o mesmo par que qualquer ferramenta de
+ * IA usa por padrão. Papel e tinta aqui puxam para um cinza-carvão quente, e o
+ * sinal marca "isto está ativo/correto" com a mesma lógica de um indicador de
+ * painel — nunca decoração.
+ */
+
+/* ------------------------------- tema claro ------------------------------- */
+:root,
+[data-theme='light'] {
+  --color-canvas: #f4f2ec;
+  --color-surface: #fdfcf9;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #ece9e0;
+  /* O fundo de uma tela inteira que não é o shell — hoje, o chat público. */
+  --color-surface-muted: #f4f2ec;
+  --color-overlay: rgb(20 18 12 / 0.4);
+
+  --color-border: #ddd8c9;
+  --color-border-strong: #c3bda8;
+
+  --color-text: #17160f;
+  --color-text-muted: #5c584a;
+  --color-text-subtle: #8b8672;
+  --color-text-inverted: #fdfcf9;
+
+  --color-accent: #0e6e63;
+  --color-accent-hover: #0a534a;
+  --color-accent-soft: #dcece7;
+  --color-accent-ring: rgb(14 110 99 / 0.35);
+  /* O texto SOBRE a cor de acento. Existe como token porque no chat público
+     ele vem da marca do cliente, e ali branco nem sempre é o legível. */
+  --color-accent-foreground: #ffffff;
+
+  --color-success: #2c7a4b;
+  --color-success-soft: #e3f0e7;
+  --color-warning: #9a6314;
+  --color-danger: #a3311a;
+  --color-danger-soft: #f7e6e0;
+
+  --shadow-card: 0 1px 0 rgb(23 22 15 / 0.03);
+}
+
+/* ------------------------------- tema escuro ------------------------------ */
+[data-theme='dark'] {
+  --color-canvas: #0e0e0c;
+  --color-surface: #16160f;
+  --color-surface-raised: #1b1b13;
+  --color-surface-sunken: #0a0a08;
+  --color-surface-muted: #0e0e0c;
+  --color-overlay: rgb(0 0 0 / 0.65);
+
+  --color-border: #2c2b1f;
+  --color-border-strong: #423f2c;
+
+  --color-text: #eeece0;
+  --color-text-muted: #a8a390;
+  --color-text-subtle: #736e5c;
+  --color-text-inverted: #0e0e0c;
+
+  --color-accent: #3fd6c3;
+  --color-accent-hover: #6ee3d4;
+  --color-accent-soft: #16302c;
+  --color-accent-ring: rgb(63 214 195 / 0.4);
+  --color-accent-foreground: #0e0e0c;
+
+  --color-success: #4fbf82;
+  --color-success-soft: #17301f;
+  --color-warning: #e0ab4a;
+  --color-danger: #e2705a;
+  --color-danger-soft: #2c1712;
+
+  --shadow-card: 0 1px 0 rgb(0 0 0 / 0.4);
+}
+
+@theme inline {
+  --color-canvas: var(--color-canvas);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-surface-sunken: var(--color-surface-sunken);
+  --color-surface-muted: var(--color-surface-muted);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+  --color-text-inverted: var(--color-text-inverted);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-foreground: var(--color-accent-foreground);
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+}
+
+@layer base {
+  /*
+    O DOCUMENTO NÃO ROLA. Quem rola são as REGIÕES.
+
+    Isto é uma aplicação de shell fixo — sidebar, topbar, conteúdo e painel do
+    S.O, cada um com a sua rolagem. Sem altura declarada aqui, `html` e `body`
+    ficam com altura AUTOMÁTICA e o documento inteiro passa a rolar junto: o
+    resultado é a tela subindo e deixando uma faixa vazia embaixo, com o painel
+    do S.O saindo de lugar.
+
+    Já tentei resolver isso prendendo o shell com `h-dvh overflow-hidden`, e não
+    bastou — prender o filho não impede o documento de crescer, e qualquer
+    elemento fora do shell (ou um `min-h-full` de uma rota) volta a alongá-lo.
+    A trava tem que estar em html/body/#root, que é onde a rolagem de fato
+    acontece.
+
+    E o `h-dvh` do shell (`AppShell.tsx`) foi TROCADO para `h-full`, não só
+    mantido: `dvh` é recalculado pelo browser em certos eventos de scroll,
+    resize e troca de layout, e pode dessincronizar da cadeia percentual
+    acima — o shell encolhe sozinho depois de uma navegação pesada, e o vão
+    que sobra embaixo mostra o fundo cru do `body`. Toda a cadeia usa a MESMA
+    unidade — porcentagem — que é estável e nunca diverge de si mesma.
+  */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  [data-theme='dark'] {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Foco visível e consistente — requisito de acessibilidade (§74). */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+    color: var(--color-text);
+  }
+
+  /*
+   * Transição suave em toda mudança de cor — hover, foco, troca de tema.
+   *
+   * `body *:not(svg):not(path)` e não `transition: all`: uma transição
+   * indiscriminada animaria propriedade de LAYOUT também (largura, posição),
+   * e brigaria com qualquer coisa que precise seguir o ponteiro ou medir a
+   * própria altura no mesmo frame. Só cor/borda/preenchimento mudam "de
+   * graça"; quem precisa animar tamanho ou posição declara a própria
+   * transição, como o `.chat-in` e o `hub-pulse` já fazem.
+   */
+  body,
+  body *:not(svg):not(path) {
+    transition-property: background-color, border-color, color, fill;
+    transition-duration: 180ms;
+    transition-timing-function: var(--ease-out-soft);
+  }
+}
+
+/*
+ * Transição da sidebar empilhada (§29): o nível novo entra pelo lado para onde
+ * a navegação foi. Discreta de propósito — "não exagerar".
+ */
+@keyframes nav-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes nav-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/*
+ * Laboratório do agente (AgentLab): balão entrando e "digitando" (§ chat).
+ *
+ * `.chat-in` só anima uma vez por elemento — como as chaves da lista são
+ * estáveis (o id do turno), React nunca remonta um balão já exibido, e a
+ * animação de entrada não repete em re-render. É o que faz a lista crescer
+ * como conversa de verdade em vez de piscar inteira a cada resposta.
+ */
+@keyframes chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.chat-in {
+  animation: chat-in 260ms var(--ease-out-soft) both;
+}
+
+/* Três pontos alternando, no mesmo ritmo do indicador de digitação do WhatsApp. */
+@keyframes typing-dot {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing-dot 1.1s ease-in-out infinite;
+}
+
+/*
+ * Pulso do botão do MyAIHub.
+ *
+ * Um anel que cresce e some por trás do ícone — sinaliza "vivo", não "clique
+ * agora". O ritmo é lento de propósito: piscar rápido no canto da tela compete
+ * com o conteúdo que o usuário está lendo.
+ */
+@keyframes hub-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.hub-pulse {
+  animation: hub-pulse 2.4s var(--ease-out-soft) infinite;
+}
+
+/*
+ * A rede que cobre a tela enquanto o S.O trabalha nela.
+ *
+ * A malha RESPIRA sozinha, devagar, para a tela não parecer congelada; o
+ * ACENDER vem do log do painel, em React, e não daqui — assim o movimento
+ * corresponde a algo que aconteceu, em vez de fingir progresso.
+ */
+@keyframes veil-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+.veil-breathe {
+  transform-origin: center;
+  animation: veil-breathe 6s ease-in-out infinite;
+}
+
+@keyframes veil-node {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.veil-node {
+  animation: veil-node 3.2s ease-in-out infinite;
+  transition:
+    r 400ms var(--ease-out-soft),
+    fill-opacity 400ms var(--ease-out-soft);
+}
+
+.veil-link {
+  transition:
+    stroke-width 400ms var(--ease-out-soft),
+    stroke-opacity 400ms var(--ease-out-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/**
+ * O flash de quem chegou por um link do painel.
+ *
+ * O OS diz "ajustei a ST01" e leva o usuário até ela. Sem a piscada, ele cai
+ * numa lista de oito itens iguais e precisa procurar o que acabou de mudar —
+ * o link entrega a página, não a regra.
+ *
+ * Dura pouco e não desloca nada: destaque que empurra layout parece defeito.
+ */
+@keyframes flash-regra {
+  0% {
+    background-color: color-mix(in oklab, var(--color-accent) 26%, transparent);
+    border-color: var(--color-accent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.flash-regra {
+  animation: flash-regra 1.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Quem pediu menos movimento continua precisando ACHAR o item: a borda fica,
+     o movimento sai. */
+  .flash-regra {
+    animation: none;
+    border-color: var(--color-accent);
+  }
+}

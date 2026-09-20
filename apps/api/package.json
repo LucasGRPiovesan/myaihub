@@ -1,0 +1,61 @@
+{
+  "name": "@myaihub/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -b",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "db:seed": "dotenv -e ../../.env -- tsx src/scripts/seed.ts",
+    "db:reset": "dotenv -e ../../.env -- prisma migrate reset",
+    "db:studio": "dotenv -e ../../.env -- prisma studio",
+    "smoke:provider": "dotenv -e ../../.env -- tsx src/scripts/smoke-provider.ts",
+    "smoke:hub": "dotenv -e ../../.env -- tsx src/scripts/smoke-hub.ts",
+    "smoke:briefing": "dotenv -e ../../.env -- tsx src/scripts/smoke-briefing.ts",
+    "smoke:agent": "dotenv -e ../../.env -- tsx src/scripts/smoke-agent.ts",
+    "smoke:latency": "dotenv -e ../../.env -- tsx src/scripts/smoke-latency.ts",
+    "smoke:routing": "dotenv -e ../../.env -- tsx src/scripts/smoke-routing.ts"
+  },
+  "prisma": {
+    "seed": "tsx src/scripts/seed.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.19.0",
+    "@myaihub/shared": "*",
+    "@prisma/client": "^6.16.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "jose": "^6.1.0",
+    "morgan": "^1.12.0",
+    "multer": "^2.2.0",
+    "pino": "^9.13.1",
+    "pino-http": "^10.5.0",
+    "ulid": "^3.0.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/morgan": "^1.9.10",
+    "@types/multer": "^2.2.0",
+    "@types/supertest": "^6.0.3",
+    "dotenv-cli": "^10.0.0",
+    "pino-pretty": "^13.1.2",
+    "prisma": "^6.16.3",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "vitest": "^3.2.4"
+  }
+}
