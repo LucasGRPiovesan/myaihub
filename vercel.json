@@ -1,22 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "services": {
-    "api": {
-      "root": "apps/api",
-      "installCommand": "cd ../.. && npm ci",
-      "buildCommand": "cd ../.. && npx prisma generate --schema=apps/api/prisma/schema.prisma && npm run build -w @myaihub/shared && npm run build -w @myaihub/api",
-      "entrypoint": "dist/vercel.js"
-    },
-    "web": {
-      "root": "apps/web",
-      "installCommand": "cd ../.. && npm ci",
-      "buildCommand": "cd ../.. && npm run build -w @myaihub/shared && npm run build -w @myaihub/web",
-      "outputDirectory": "dist",
-      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-    }
-  },
+  "installCommand": "npm ci --include=dev",
+  "buildCommand": "npm run build -w @myaihub/shared && npm run build -w @myaihub/web",
+  "outputDirectory": "apps/web/dist",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": { "service": "api" } },
-    { "source": "/(.*)", "destination": { "service": "web" } }
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

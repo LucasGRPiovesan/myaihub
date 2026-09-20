@@ -49,3 +49,6 @@ playwright-report/
 
 # uploads do usuário: não é código-fonte
 .media/
+
+.vercel
+.env*

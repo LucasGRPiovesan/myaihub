@@ -6,7 +6,15 @@ import { z } from 'zod';
 // O .env vive na raiz do monorepo. Resolvemos a partir do próprio arquivo para
 // que funcione tanto em `tsx src/...` quanto em `node dist/...`, e independente
 // do cwd de quem invocou.
-const here = dirname(fileURLToPath(import.meta.url));
+//
+// O bundle CJS gerado para a Vercel (apps/api/src/vercel.ts, empacotado por
+// esbuild) não tem `import.meta.url` — o formato CJS o deixa vazio. `__dirname`
+// é global do próprio CJS e inexistente em ESM real, então a checagem separa os
+// dois ambientes sem exigir configuração: na Vercel não há `.env` para carregar
+// mesmo (as variáveis chegam do ambiente), então `loadDotenv` apenas não acha o
+// arquivo e segue — o que importa aqui é nunca lançar ao computar o caminho.
+const here =
+  typeof __dirname !== 'undefined' ? __dirname : dirname(fileURLToPath(import.meta.url));
 loadDotenv({ path: resolve(here, '../../../../.env'), quiet: true });
 
 const booleanFromString = z
