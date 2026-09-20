@@ -194,9 +194,7 @@ function Passos({ block }: { block: VisualBlock }) {
               <div className={cx('min-w-0', !ultimo ? 'pb-5' : 'pb-0.5')}>
                 <p className="pt-1 text-[13px] font-semibold text-text">{row.cells[0]}</p>
                 {row.cells[1] && (
-                  <p className="mt-1 text-[13px] leading-relaxed text-text-muted">
-                    {row.cells[1]}
-                  </p>
+                  <p className="mt-1 text-[13px] leading-relaxed text-text-muted">{row.cells[1]}</p>
                 )}
               </div>
             </li>

@@ -43,7 +43,12 @@ function KeySlot({ provider, slot }: { provider: ProviderName; slot: ProviderKey
     if (!valor.trim()) return;
     salvar.mutate(
       { provider, kind: slot.kind, apiKey: valor.trim() },
-      { onSuccess: () => { setValor(''); setTrocando(false); } },
+      {
+        onSuccess: () => {
+          setValor('');
+          setTrocando(false);
+        },
+      },
     );
   }
 
@@ -116,7 +121,12 @@ function KeySlot({ provider, slot }: { provider: ProviderName; slot: ProviderKey
             />
           </Field>
           <div className="mt-2 flex gap-2">
-            <Button size="sm" loading={salvar.isPending} disabled={!valor.trim()} onClick={salvarAgora}>
+            <Button
+              size="sm"
+              loading={salvar.isPending}
+              disabled={!valor.trim()}
+              onClick={salvarAgora}
+            >
               Salvar
             </Button>
           </div>
@@ -163,7 +173,11 @@ function ProviderCard({ status }: { status: ProviderStatus }) {
         <Switch
           checked={status.enabled}
           disabled={setEnabled.isPending}
-          label={status.enabled ? `Desligar ${PROVIDER_LABELS[status.provider]}` : `Ligar ${PROVIDER_LABELS[status.provider]}`}
+          label={
+            status.enabled
+              ? `Desligar ${PROVIDER_LABELS[status.provider]}`
+              : `Ligar ${PROVIDER_LABELS[status.provider]}`
+          }
           onChange={(enabled) => setEnabled.mutate({ provider: status.provider, enabled })}
         />
       </div>

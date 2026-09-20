@@ -1,7 +1,11 @@
 import { PROVIDER_KEY_SLOTS, PROVIDER_NAMES, type ProviderName } from '@myaihub/shared';
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate, requireRole, requireTenant } from '../../../http/middlewares/authenticate.js';
+import {
+  authenticate,
+  requireRole,
+  requireTenant,
+} from '../../../http/middlewares/authenticate.js';
 import { parseBody, parseParams } from '../../../http/validate.js';
 import type { TokenService } from '../../../shared/application/ports.js';
 import type { CredentialCipher } from '../../../shared/infrastructure/crypto/credential-cipher.js';
@@ -19,10 +23,9 @@ export interface ProviderCredentialsRouterDependencies {
   manage: ManageProviderCredentialsUseCase;
 }
 
-const PROVIDER_PARAM_PROVIDERS = PROVIDER_NAMES.filter((provider) => provider !== 'fake') as Exclude<
-  ProviderName,
-  'fake'
->[];
+const PROVIDER_PARAM_PROVIDERS = PROVIDER_NAMES.filter(
+  (provider) => provider !== 'fake',
+) as Exclude<ProviderName, 'fake'>[];
 
 const providerParam = z.object({ provider: z.enum(PROVIDER_PARAM_PROVIDERS) });
 const keyParam = providerParam.extend({ kind: z.string().trim().min(1).max(10) });
@@ -125,26 +128,19 @@ export function createProviderCredentialsRouter(
     response.status(204).end();
   });
 
-  router.post(
-    '/admin/providers/:provider/keys/:kind/test',
-    ...admin,
-    async (request, response) => {
-      const tenant = requireTenant(request);
-      const { provider, kind } = parseParams(keyParam, request);
-      const body = parseBody(
-        z.object({ apiKey: z.string().trim().max(400).optional() }),
-        request,
-      );
+  router.post('/admin/providers/:provider/keys/:kind/test', ...admin, async (request, response) => {
+    const tenant = requireTenant(request);
+    const { provider, kind } = parseParams(keyParam, request);
+    const body = parseBody(z.object({ apiKey: z.string().trim().max(400).optional() }), request);
 
-      response.json(
-        await deps.manage.testKey(tenant, {
-          provider,
-          kind,
-          ...(body.apiKey ? { apiKey: body.apiKey } : {}),
-        }),
-      );
-    },
-  );
+    response.json(
+      await deps.manage.testKey(tenant, {
+        provider,
+        kind,
+        ...(body.apiKey ? { apiKey: body.apiKey } : {}),
+      }),
+    );
+  });
 
   return router;
 }

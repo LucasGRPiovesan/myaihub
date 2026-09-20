@@ -31,9 +31,7 @@ export function AgentHealthCard({ agent }: { agent: CanonicalAgent }) {
   return (
     <Card className="p-5">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-          Prontidão
-        </p>
+        <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Prontidão</p>
         <p className="text-2xl font-semibold tabular-nums">{health.score}</p>
       </div>
 

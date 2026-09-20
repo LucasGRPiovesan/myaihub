@@ -1,0 +1,15 @@
+# Mesma regra do .gitignore: segredo local nunca pode ir para o build da
+# Vercel. O nft (tracer de dependências do build) inclui `.env` no bundle da
+# função mesmo com o arquivo fora do git — foi assim que as duas chaves do
+# Gemini do ambiente de desenvolvimento vazaram para a produção.
+.env
+.env.*
+!.env.example
+
+.media/
+storage/
+test-results/
+playwright-report/
+.playwright-mcp/
+.rtk/
+.scratch-shots/

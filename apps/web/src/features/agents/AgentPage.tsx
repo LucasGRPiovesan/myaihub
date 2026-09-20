@@ -120,9 +120,7 @@ function ActiveCampaigns({ agentId }: { agentId: string }) {
 
   return (
     <Card className="p-4">
-      <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-        Atuando em
-      </p>
+      <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Atuando em</p>
       <ul className="mt-2 flex flex-col gap-1.5">
         {campaigns.map((campaign) => (
           <li key={campaign.id}>
@@ -441,9 +439,7 @@ function ConfigurationMap({
 
   return (
     <Card className="p-4">
-      <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-        Configuração
-      </p>
+      <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Configuração</p>
       <ul className="mt-2.5 flex flex-col gap-1">
         {FACET_ORDER.map((facet) => (
           <li key={facet}>
@@ -473,9 +469,7 @@ function History({ versions }: { versions: AgentVersion[] }) {
 
   return (
     <Card className="p-4">
-      <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-        Histórico
-      </p>
+      <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Histórico</p>
       <ul className="mt-2.5 flex flex-col gap-1.5">
         {versions.slice(0, 6).map((version) => (
           <li key={version.id} className="flex items-baseline gap-2 text-[12px]">

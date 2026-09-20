@@ -93,9 +93,7 @@ function ProjectCampaigns({ projectId }: { projectId: string }) {
   return (
     <Card className="mt-5 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-          Campanhas
-        </p>
+        <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Campanhas</p>
         <Button size="sm" variant="secondary" onClick={open}>
           <Sparkles aria-hidden className="size-4" />
           Nova campanha
@@ -182,9 +180,7 @@ export function ProjectPage() {
 
       {versions && versions.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-            Histórico
-          </h2>
+          <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Histórico</h2>
           <ul className="mt-2 flex flex-col gap-1.5">
             {versions.map((version) => (
               <li key={version.id} className="flex items-baseline gap-3 text-[13px]">

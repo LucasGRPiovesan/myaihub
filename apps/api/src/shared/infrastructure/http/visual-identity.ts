@@ -96,7 +96,8 @@ export function extractColors(css: string): ColorEvidence[] {
     registrar(hex, css.slice(Math.max(0, match.index - 60), match.index));
   }
 
-  const rgbPattern = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,/]\s*([\d.%]+))?\s*\)/gi;
+  const rgbPattern =
+    /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,/]\s*([\d.%]+))?\s*\)/gi;
   while ((match = rgbPattern.exec(css)) !== null) {
     // Cor quase transparente é sombra e sobreposição, nunca a cor da marca.
     const alpha = match[4];
@@ -139,14 +140,20 @@ const GENERICAS = new Set([
   'unset',
 ]);
 
-export function extractFonts(css: string): Array<{ family: string; count: number; heading: boolean }> {
+export function extractFonts(
+  css: string,
+): Array<{ family: string; count: number; heading: boolean }> {
   const encontradas = new Map<string, { count: number; heading: boolean }>();
   const pattern = /font-family\s*:\s*([^;}"]+)/gi;
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(css)) !== null) {
     // Só a PRIMEIRA da pilha é a escolha; o resto é plano B do próprio site.
-    const primeira = match[1]!.split(',')[0]?.trim().replace(/^["']|["']$/g, '') ?? '';
+    const primeira =
+      match[1]!
+        .split(',')[0]
+        ?.trim()
+        .replace(/^["']|["']$/g, '') ?? '';
     const normal = primeira.toLowerCase();
     if (!primeira || GENERICAS.has(normal) || primeira.startsWith('var(')) continue;
     if (!/^[A-Za-z0-9 -]{2,48}$/.test(primeira)) continue;
@@ -257,13 +264,16 @@ function metaContent(html: string, attribute: string, value: string): string | n
 export function extractLogoUrls(html: string, baseUrl: string): string[] {
   const candidatos: string[] = [];
 
-  const ogImage = metaContent(html, 'property', 'og:image') ?? metaContent(html, 'name', 'og:image');
+  const ogImage =
+    metaContent(html, 'property', 'og:image') ?? metaContent(html, 'name', 'og:image');
   if (ogImage) candidatos.push(ogImage);
 
   // `apple-touch-icon` costuma ser a marca em alta resolução e sem texto.
   for (const rel of ['apple-touch-icon', 'icon', 'shortcut icon']) {
-    const href = new RegExp(`<link[^>]+rel=["'][^"']*${rel}[^"']*["'][^>]*href=["']([^"']+)["']`, 'i')
-      .exec(html)?.[1];
+    const href = new RegExp(
+      `<link[^>]+rel=["'][^"']*${rel}[^"']*["'][^>]*href=["']([^"']+)["']`,
+      'i',
+    ).exec(html)?.[1];
     if (href) candidatos.push(href);
   }
 
@@ -320,4 +330,3 @@ export function readVisualIdentity(html: string, css: string, baseUrl: string): 
       metaContent(html, 'name', 'description') ?? metaContent(html, 'property', 'og:description'),
   };
 }
-

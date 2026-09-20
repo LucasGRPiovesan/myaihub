@@ -226,9 +226,7 @@ export function EditableFacet({
     return (
       <section className="mt-6">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-            {label}
-          </h2>
+          <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">{label}</h2>
           <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>
             <Plus aria-hidden className="size-3.5" />
             Adicionar
@@ -241,9 +239,7 @@ export function EditableFacet({
   return (
     <section className="mt-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-          {label}
-        </h2>
+        <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">{label}</h2>
         {!adding && (
           <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>
             <Plus aria-hidden className="size-3.5" />

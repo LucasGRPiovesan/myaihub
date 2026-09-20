@@ -220,7 +220,6 @@ function hideTrailingPartialMarker(content: string): string {
 }
 
 function parseParts(content: string): SpeechPart[] {
-
   const parts: SpeechPart[] = [];
   const linhas = content.replace(/\r\n/g, '\n').split('\n');
 

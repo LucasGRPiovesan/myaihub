@@ -58,9 +58,7 @@ function AgentBinding({
     <Card className="mt-5 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-            Agente
-          </p>
+          <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Agente</p>
           <p className="mt-1 text-sm text-text-muted">
             Quem conversa com o público desta campanha.
           </p>
@@ -376,9 +374,7 @@ function Publication({
     <Card className="mt-5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-            Publicação
-          </p>
+          <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Publicação</p>
           <p className="mt-1 text-sm text-text-muted">
             Publicar congela a versão atual. Alterar a campanha depois disso não muda o que está no
             ar — exige publicar de novo.
@@ -517,9 +513,7 @@ export function CampaignPage() {
 
       {strategy?.goal.primary && (
         <Card className="mt-5 p-5">
-          <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-            Objetivo
-          </p>
+          <p className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Objetivo</p>
           <p className="mt-1.5 text-sm leading-relaxed">{strategy.goal.primary}</p>
           {strategy.goal.successCriteria.length > 0 && (
             <ul className="mt-3 flex flex-col gap-1">
@@ -574,9 +568,7 @@ export function CampaignPage() {
 
       {versions && versions.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">
-            Histórico
-          </h2>
+          <h2 className="text-[12.5px] font-semibold tracking-tight text-text-subtle">Histórico</h2>
           <ul className="mt-2 flex flex-col gap-1.5">
             {versions.map((version) => (
               <li key={version.id} className="flex items-baseline gap-3 text-[13px]">

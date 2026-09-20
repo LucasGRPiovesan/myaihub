@@ -51,7 +51,9 @@ export function useProviders(options?: { enabled?: boolean }): UseQueryResult<Pr
   return useQuery({
     queryKey: providersKey,
     queryFn: async () => {
-      const { providers } = await apiRequest<{ providers: ProviderStatus[] }>('/api/admin/providers');
+      const { providers } = await apiRequest<{ providers: ProviderStatus[] }>(
+        '/api/admin/providers',
+      );
       return providers;
     },
     enabled: options?.enabled ?? true,

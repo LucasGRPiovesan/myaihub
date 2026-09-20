@@ -62,7 +62,9 @@ export function QuotaBadge({ isAdmin }: { isAdmin: boolean }) {
   // discorda do fato some — depois de um restart ela não sabe mais nada.
   const freeAvailableAt = isAdmin
     ? (gemini?.freeAvailableAt ?? null)
-    : (!gratuita && spend?.quota?.next?.freeAvailableAt ? spend.quota.next.freeAvailableAt : null);
+    : !gratuita && spend?.quota?.next?.freeAvailableAt
+      ? spend.quota.next.freeAvailableAt
+      : null;
   const volta = freeAvailableAt ? horario(freeAvailableAt) : null;
 
   const titulo = isAdmin
@@ -87,7 +89,10 @@ export function QuotaBadge({ isAdmin }: { isAdmin: boolean }) {
   const ligado = forcedPaid || !gratuita;
 
   return (
-    <span className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted" title={titulo}>
+    <span
+      className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted"
+      title={titulo}
+    >
       <span className={gratuita && !forcedPaid ? 'text-success' : 'text-warning'}>
         {forcedPaid ? 'paga (forçado)' : gratuita ? 'gratuita' : 'paga'}
       </span>

@@ -1552,9 +1552,7 @@ export class MyAIHubOperationRunner {
 Título: ${page.title}
 
 ${page.text}${
-          retratoVisual
-            ? `\n\n--- IDENTIDADE VISUAL MEDIDA NESTA PÁGINA ---\n${retratoVisual}`
-            : ''
+          retratoVisual ? `\n\n--- IDENTIDADE VISUAL MEDIDA NESTA PÁGINA ---\n${retratoVisual}` : ''
         }`,
       });
 

@@ -331,8 +331,7 @@ export function brandCssVariables(brand: CanonicalBrandIdentity): Record<string,
 /** A família da marca com uma pilha de segurança atrás — fonte que não carrega não pode deixar a página sem texto. */
 export function brandFontStacks(brand: CanonicalBrandIdentity): { heading: string; body: string } {
   const fallback = `ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`;
-  const stack = (family: string): string =>
-    family ? `'${family}', ${fallback}` : `${fallback}`;
+  const stack = (family: string): string => (family ? `'${family}', ${fallback}` : `${fallback}`);
 
   return {
     heading: stack(brand.typography.headingFamily || brand.typography.bodyFamily),

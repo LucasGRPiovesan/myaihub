@@ -100,9 +100,7 @@ describe('parseSpeech', () => {
 
     const bloco = parts[0];
     if (bloco?.type !== 'block') throw new Error('esperava um bloco');
-    expect(bloco.block.rows).toEqual([
-      { cells: ['Entrega rápida', 'em 3 dias'], icon: 'truck' },
-    ]);
+    expect(bloco.block.rows).toEqual([{ cells: ['Entrega rápida', 'em 3 dias'], icon: 'truck' }]);
   });
 
   it('célula que não bate com o vocabulário continua sendo CONTEÚDO, não ícone', () => {
@@ -112,9 +110,7 @@ describe('parseSpeech', () => {
 
     const bloco = parts[0];
     if (bloco?.type !== 'block') throw new Error('esperava um bloco');
-    expect(bloco.block.rows).toEqual([
-      { cells: ['foguete', 'Entrega rápida', 'em 3 dias'] },
-    ]);
+    expect(bloco.block.rows).toEqual([{ cells: ['foguete', 'Entrega rápida', 'em 3 dias'] }]);
   });
 
   it('comparativo e ficha NÃO extraem ícone — a primeira célula é dado', () => {

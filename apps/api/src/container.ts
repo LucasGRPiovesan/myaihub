@@ -263,7 +263,9 @@ export function createContainer(): Container {
     // instância velha.
     quota: () => {
       const gemini = providers.get('gemini');
-      return servedTier.last() ?? (gemini instanceof GeminiProvider ? gemini.keyStatus().tier : null);
+      return (
+        servedTier.last() ?? (gemini instanceof GeminiProvider ? gemini.keyStatus().tier : null)
+      );
     },
     logger,
   });

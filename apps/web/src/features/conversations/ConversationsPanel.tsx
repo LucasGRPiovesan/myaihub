@@ -107,9 +107,7 @@ function Transcrito({ id, onClose }: { id: string; onClose: () => void }) {
               marca, a leitura dele apareceria com a autoridade de uma medida. */}
           {(data.state.facts.length > 0 || data.state.signals.length > 0) && (
             <div className="mt-5 border-t border-border pt-3">
-              <p className="text-[12px] tracking-tight text-text-subtle">
-                O que o agente entendeu
-              </p>
+              <p className="text-[12px] tracking-tight text-text-subtle">O que o agente entendeu</p>
               <ul className="mt-2 flex flex-col gap-1">
                 {data.state.facts.map((fato) => (
                   <li key={fato.key} className="text-[13px] text-text-muted">

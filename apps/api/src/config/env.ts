@@ -3,19 +3,21 @@ import { fileURLToPath } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
-// O .env vive na raiz do monorepo. Resolvemos a partir do próprio arquivo para
-// que funcione tanto em `tsx src/...` quanto em `node dist/...`, e independente
-// do cwd de quem invocou.
+// NUNCA carregar `.env` na Vercel. O tracer de dependências do build (nft)
+// inclui o `.env` local no bundle da função mesmo ele sendo ignorado pelo
+// git — medido: as DUAS chaves do Gemini do `.env` de desenvolvimento
+// apareceram na Vercel de produção como credencial "semeada", sem nenhum
+// `GEMINI_API_KEY_PAYED` configurado nas env vars do projeto. `VERCEL` é
+// setada pela própria plataforma em toda função; fora dela (dev, teste,
+// CI) o arquivo é lido normalmente.
 //
-// O bundle CJS gerado para a Vercel (apps/api/src/vercel.ts, empacotado por
-// esbuild) não tem `import.meta.url` — o formato CJS o deixa vazio. `__dirname`
-// é global do próprio CJS e inexistente em ESM real, então a checagem separa os
-// dois ambientes sem exigir configuração: na Vercel não há `.env` para carregar
-// mesmo (as variáveis chegam do ambiente), então `loadDotenv` apenas não acha o
-// arquivo e segue — o que importa aqui é nunca lançar ao computar o caminho.
-const here =
-  typeof __dirname !== 'undefined' ? __dirname : dirname(fileURLToPath(import.meta.url));
-loadDotenv({ path: resolve(here, '../../../../.env'), quiet: true });
+// `here` cobre o mesmo arquivo rodando como `tsx src/...` (ESM, tem
+// `import.meta.url`) ou `node dist/...` (idem) — `__dirname` só existiria
+// num bundle CJS, que este projeto não usa mais para a Vercel.
+if (!process.env['VERCEL']) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  loadDotenv({ path: resolve(here, '../../../../.env'), quiet: true });
+}
 
 const booleanFromString = z
   .string()

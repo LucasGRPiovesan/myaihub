@@ -129,9 +129,10 @@ export class GeminiKeyRing {
     const resultado = this.select();
     this.deps.onSwitch?.({
       tier: resultado.tier,
-      until: resultado.tier === 'PAID' && this.freeBlockedUntil > this.now().getTime()
-        ? new Date(this.freeBlockedUntil)
-        : null,
+      until:
+        resultado.tier === 'PAID' && this.freeBlockedUntil > this.now().getTime()
+          ? new Date(this.freeBlockedUntil)
+          : null,
       reason: value ? 'admin forçou a chave paga' : 'admin voltou para automático',
     });
   }

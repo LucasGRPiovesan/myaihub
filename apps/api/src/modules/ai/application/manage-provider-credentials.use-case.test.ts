@@ -109,7 +109,12 @@ describe('ManageProviderCredentialsUseCase', () => {
     await useCase.saveKey(contexto(), { provider: 'gemini', kind: 'FREE', apiKey: 'AIza-segredo' });
 
     expect(repository.credentials).toEqual([
-      { provider: 'gemini', kind: 'FREE', apiKeyCipher: 'cifrado:AIza-segredo', updatedAt: expect.any(Date) },
+      {
+        provider: 'gemini',
+        kind: 'FREE',
+        apiKeyCipher: 'cifrado:AIza-segredo',
+        updatedAt: expect.any(Date),
+      },
     ]);
     // A chave em si NUNCA vai para o log de auditoria — só o que identifica qual mudou.
     expect(audits[0]?.metadata).toEqual({ kind: 'FREE' });

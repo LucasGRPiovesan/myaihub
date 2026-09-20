@@ -57,7 +57,9 @@ export default async function handler(request: Request, response: Response): Pro
       error: {
         code: 'SERVICE_UNAVAILABLE',
         message:
-          error instanceof Error ? error.message : 'Falha ao inicializar a API. Veja os logs da função.',
+          error instanceof Error
+            ? error.message
+            : 'Falha ao inicializar a API. Veja os logs da função.',
       },
     });
     return;

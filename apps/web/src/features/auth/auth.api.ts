@@ -61,9 +61,21 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => apiRequest<void>('/api/auth/logout', { method: 'POST' }),
     onSettled: () => {
-      // Limpa tudo: cache de outra conta jamais deve sobreviver a um logout.
-      queryClient.clear();
+      // A ORDEM importa. `clear()` destrói toda Query do cache — inclusive a
+      // de `authKeys.me` que o AuthenticatedApp está observando NA HORA — e
+      // um `setQueryData` depois disso cria uma Query NOVA, sem observador
+      // nenhum ligado a ela: a tela nunca sabia que devia trocar para a de
+      // login. Medido: `getQueryData` já voltava `null`, e a UI seguia
+      // mostrando a conta antiga até um F5 (a sessão real já tinha morrido
+      // no servidor, então recarregar sempre "consertava").
+      //
+      // `setQueryData` primeiro atualiza a Query EXISTENTE, então quem já
+      // está inscrito nela recebe o `null` e desmonta. Só depois é seguro
+      // limpar o resto do cache — por isso adiado a uma microtask, depois de
+      // qualquer notificação que o próprio `setQueryData` tenha agendado.
       queryClient.setQueryData(authKeys.me, null);
+      queueMicrotask(() => queryClient.clear());
+
       // O transcrito do painel some AQUI, no logout EXPLÍCITO.
       //
       // Antes ele era apagado por inferência — "havia usuário, agora não há" —
